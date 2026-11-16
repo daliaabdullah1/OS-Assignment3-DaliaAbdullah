@@ -51,36 +51,67 @@ class SharedStats {
     static long totalServiceTime = 0;
     static final java.util.concurrent.atomic.AtomicInteger busyWaitPolls = new java.util.concurrent.atomic.AtomicInteger(0);
 
-    // TODO Feature 2: declare the lock(s) protecting the three shared variables above here.
+    // Feature 2: Single coarse-grained ReentrantLock protecting the three shared counters
+    private static final ReentrantLock statsLock = new ReentrantLock();
 
     public static void incrementContextSwitch() {
-        int tmp = contextSwitchCount;
-        RaceWindow.pause();
-        contextSwitchCount = tmp + 1;
+        statsLock.lock();
+        try {
+            int tmp = contextSwitchCount;
+            RaceWindow.pause();
+            contextSwitchCount = tmp + 1;
+        } finally {
+            statsLock.unlock();
+        }
     }
 
     public static void incrementCompletedProcess() {
-        int tmp = completedProcessCount;
-        RaceWindow.pause();
-        completedProcessCount = tmp + 1;
+        statsLock.lock();
+        try {
+            int tmp = completedProcessCount;
+            RaceWindow.pause();
+            completedProcessCount = tmp + 1;
+        } finally {
+            statsLock.unlock();
+        }
     }
 
     public static void addServiceTime(int ms) {
-        long tmp = totalServiceTime;
-        RaceWindow.pause();
-        totalServiceTime = tmp + ms;
+        statsLock.lock();
+        try {
+            long tmp = totalServiceTime;
+            RaceWindow.pause();
+            totalServiceTime = tmp + ms;
+        } finally {
+            statsLock.unlock();
+        }
     }
 
     public static int getCompletedProcessCount() {
-        return completedProcessCount;
+        statsLock.lock();
+        try {
+            return completedProcessCount;
+        } finally {
+            statsLock.unlock();
+        }
     }
 
     public static int getContextSwitchCount() {
-        return contextSwitchCount;
+        statsLock.lock();
+        try {
+            return contextSwitchCount;
+        } finally {
+            statsLock.unlock();
+        }
     }
 
     public static long getTotalServiceTime() {
-        return totalServiceTime;
+        statsLock.lock();
+        try {
+            return totalServiceTime;
+        } finally {
+            statsLock.unlock();
+        }
     }
 }
 
