@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.locks.ReentrantLock;
-// TODO (Feature 3): import java.util.concurrent.Semaphore;
+import java.util.concurrent.Semaphore;
 
 // ANSI Color Codes for enhanced terminal output (same as Assignment 1)
 class Colors {
@@ -123,7 +123,8 @@ class ReadyQueue {
     // Feature 1: ReentrantLock protecting all accesses to `list` and `map`
     private final ReentrantLock queueLock = new ReentrantLock();
 
-    // TODO Feature 3: declare the counting semaphore here
+    // Feature 3: Counting semaphore tracking processes currently waiting in the ready queue
+    private final Semaphore itemsAvailable = new Semaphore(0);
 
     public void add(Process process) {
         queueLock.lock();
@@ -132,7 +133,8 @@ class ReadyQueue {
             list.add(thread);
             map.put(thread, process);
 
-            // TODO Feature 3: signal semaphore
+            // Feature 3: signal that one more process is available in the queue
+            itemsAvailable.release();
 
             System.out.println(Colors.BLUE + "  ➕ " + Colors.BOLD + Colors.CYAN + process.getName() + Colors.RESET +
                     Colors.BLUE + " (Priority: " + process.getPriority() + ") added to ready queue" + Colors.RESET +
@@ -179,6 +181,16 @@ class ReadyQueue {
         } finally {
             queueLock.unlock();
         }
+    }
+
+    // Feature 3: Blocking wait until a process is available in the queue
+    public void acquireProcess() throws InterruptedException {
+        itemsAvailable.acquire();
+    }
+
+    // Feature 3: Clean shutdown wake-up for any CPUs still blocked on the semaphore
+    public void wakeAllCpus(int count) {
+        itemsAvailable.release(count);
     }
 }
 
@@ -282,15 +294,20 @@ class CpuWorker extends Thread {
     public void run() {
         while (SharedStats.getCompletedProcessCount() < SharedStats.totalProcesses) {
 
-            // TODO Feature 3: replace this polling loop by a blocking wait on the counting semaphore
+            // Feature 3: block cleanly on the counting semaphore instead of busy waiting
+            try {
+                readyQueue.acquireProcess();
+            } catch (InterruptedException e) {
+                return;
+            }
+
+            // Re-check after waking up in case all processes are already completed
+            if (SharedStats.getCompletedProcessCount() >= SharedStats.totalProcesses) {
+                break;
+            }
+
             Thread thread = readyQueue.poll();
             if (thread == null) {
-                SharedStats.busyWaitPolls.incrementAndGet();
-                try {
-                    Thread.sleep(20);
-                } catch (InterruptedException e) {
-                    return;
-                }
                 continue;
             }
 
@@ -309,6 +326,9 @@ class CpuWorker extends Thread {
 
             if (!process.isFinished()) {
                 readyQueue.add(process);
+            } else if (SharedStats.getCompletedProcessCount() == SharedStats.totalProcesses) {
+                // Feature 3: Last process completed -> wake all waiting CPUs for clean termination
+                readyQueue.wakeAllCpus(SharedStats.totalCPUs);
             }
         }
     }
